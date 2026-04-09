@@ -1,4 +1,5 @@
 import os
+from pydantic import BaseModel, HttpUrl
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -10,9 +11,8 @@ from services.quote_calculation import (
     get_tier_definitions,
     QuoteParams
 )
-# TODO: Enable when playwright/greenlet compatibility resolved
-# from services.link_preview import fetch_link_preview
-# from services.data_extraction import extract_data
+from services.link_preview import fetch_link_preview
+from services.data_extraction import extract_data
 
 # Load environment variables from .env.local for local development
 if os.path.exists(".env.local"):
@@ -25,6 +25,10 @@ app = FastAPI(
     description="Backend API for anpost-insurance",
     version="1.0.0"
 )
+
+
+class ExtractDataRequest(BaseModel):
+    url: HttpUrl
 
 # Get CORS origins from environment variable
 cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
@@ -104,40 +108,35 @@ async def get_tiers_endpoint(product_type: str = Query(default="car")):
     }
 
 
-# TEMPLATE: Link Preview and Data Extraction Endpoints
-# TODO: Enable when playwright/greenlet compatibility resolved
-# @app.get("/api/link-preview")
-# async def link_preview_endpoint(url: str = Query(..., description="URL to preview")):
-#     """
-#     Fetch link preview (title, description, image) for a given URL
-#     """
-#     try:
-#         preview = await fetch_link_preview(url)
-#         return {
-#             "success": True,
-#             "data": preview
-#         }
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"Link preview failed: {str(e)}")
+@app.get("/api/link-preview")
+async def link_preview_endpoint(url: str = Query(..., description="URL to preview")):
+    """
+    Fetch link preview (title, description, image) for a given URL.
+    Returns a safe fallback object when upstream sites are unreachable.
+    """
+    try:
+        preview = await fetch_link_preview(url)
+        return {
+            "success": True,
+            "data": preview.model_dump()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Link preview failed: {str(e)}")
 
 
-# @app.post("/api/extract-data")
-# async def extract_data_endpoint(request: dict):
-#     """
-#     Extract structured data from a URL (vehicle details, driver info, etc.)
-#     """
-#     try:
-#         url = request.get("url")
-#         if not url:
-#             raise HTTPException(status_code=400, detail="URL is required")
-
-#         result = await extract_data(url)
-#         return {
-#             "success": True,
-#             "data": result
-#         }
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"Data extraction failed: {str(e)}")
+@app.post("/api/extract-data")
+async def extract_data_endpoint(request: ExtractDataRequest):
+    """
+    Extract structured data from a URL (vehicle details, property info, travel info).
+    """
+    try:
+        result = await extract_data(str(request.url))
+        return {
+            "success": True,
+            "data": result.model_dump()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Data extraction failed: {str(e)}")
 
 
 if __name__ == "__main__":
