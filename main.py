@@ -12,7 +12,6 @@ from services.quote_calculation import (
     QuoteParams
 )
 from services.link_preview import fetch_link_preview
-from services.data_extraction import extract_data
 
 # Load environment variables from .env.local for local development
 if os.path.exists(".env.local"):
@@ -130,10 +129,18 @@ async def extract_data_endpoint(request: ExtractDataRequest):
     Extract structured data from a URL (vehicle details, property info, travel info).
     """
     try:
-        result = await extract_data(str(request.url))
+        preview = await fetch_link_preview(str(request.url))
+        result = {
+            "url": str(request.url),
+            "contentType": preview.contentType,
+            "structured": {},
+            "rawText": f"{preview.title or ''} {preview.description or ''}".strip(),
+            "confidence": 0.2 if (preview.title or preview.description) else 0.0,
+            "error": "Deep extraction unavailable in this deployment; returning preview-derived fallback.",
+        }
         return {
             "success": True,
-            "data": result.model_dump()
+            "data": result
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Data extraction failed: {str(e)}")
